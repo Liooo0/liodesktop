@@ -1,0 +1,177 @@
+"""LioDesktop 内核: Flask 统一入口(health/status/radar/chat/config)"""
+import os, sys, json, urllib.request, urllib.error
+from flask import Flask, request, jsonify, send_from_directory
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.logger import get_logger
+from core.config import ConfigManager
+from core.service_manager import ServiceManager
+from core.db import db_add, db_query
+from adapters.github_radar import GitHubRadar
+from adapters.model_radar import ModelRadar
+from adapters.llm import LLMProvider
+
+log = get_logger("server")
+app = Flask(__name__, static_folder=None)
+
+config = ConfigManager()
+sm = ServiceManager()
+github = GitHubRadar()
+models = ModelRadar()
+llm = LLMProvider(config)
+
+# 注册服务(状态灯探测)
+sm.register("github", check=github.health)
+sm.register("models", check=models.health)
+sm.register("llm", check=llm.health)
+
+UI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui")
+
+@app.route("/health")
+def health():
+    return jsonify({"ok": True, "app": "liodesktop", "version": "0.1.0"})
+
+@app.route("/status")
+def status():
+    return jsonify(sm.probe_all())
+
+@app.route("/api/radar")
+def radar():
+    q = request.args.get("q", "")
+    days = int(request.args.get("days", "7"))
+    try:
+        if q:
+            items = github.search_repos(q)
+        else:
+            items = github.new_models(days)
+        return jsonify({"ok": True, "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    q = (request.json or {}).get("q", "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "empty"}), 400
+    try:
+        answer = llm.ask(q)
+        db_add("chat", q, answer)
+        return jsonify({"ok": True, "answer": answer})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@app.route("/api/models")
+def api_models():
+    try:
+        items = models.recent_models()
+        return jsonify({"ok": True, "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+@app.route("/api/verify", methods=["POST"])
+def verify():
+    text = (request.json or {}).get("text", "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "empty"}), 400
+    try:
+        result = models.verify(text, github, llm)
+        db_add("verify", text, json.dumps(result, ensure_ascii=False)[:2000])
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+@app.route("/api/providers", methods=["GET", "POST"])
+def providers():
+    if request.method == "GET":
+        return jsonify({"ok": True, "active": config.get("active_provider", ""),
+                        "providers": llm.list_providers()})
+    body = request.json or {}
+    if body.get("set_active"):
+        llm.set_active(body["set_active"])
+        return jsonify({"ok": True})
+    name = body.get("name", "")
+    if not name:
+        return jsonify({"ok": False, "error": "name required"}), 400
+    llm.upsert(name, body.get("base_url", ""), body.get("api_key", ""), body.get("model", ""))
+    if body.get("make_active"):
+        llm.set_active(name)
+    return jsonify({"ok": True})
+
+@app.route("/api/providers/test", methods=["POST"])
+def providers_test():
+    """测试连接: 用临时配置发一个最小请求"""
+    body = request.json or {}
+    name = body.get("name", "")
+    base_url = body.get("base_url", "")
+    api_key = body.get("api_key", "")
+    model = body.get("model", "")
+    if not (base_url and model):
+        return jsonify({"ok": False, "error": "base_url/model 必填"}), 400
+    import json as _json
+    payload = _json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 5,
+    }).encode()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    req = urllib.request.Request(base_url.rstrip("/") + "/chat/completions",
+                                 data=payload, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            _json.loads(r.read())
+        return jsonify({"ok": True, "message": "连接成功 ✓"})
+    except urllib.error.HTTPError as e:
+        return jsonify({"ok": False, "error": f"HTTP {e.code}: {e.read().decode()[:150]}"})
+    except urllib.error.URLError as e:
+        return jsonify({"ok": False, "error": f"网络错误: {e.reason}"})
+
+@app.route("/api/history")
+def history():
+    kind = request.args.get("kind", "verify")
+    rows = db_query(kind, limit=min(int(request.args.get("limit", "10")), 50))
+    return jsonify({"ok": True, "items": rows})
+
+@app.route("/api/config", methods=["GET", "POST"])
+def cfg():
+    if request.method == "GET":
+        # 不回传完整 key,只给掩码
+        key = config.get("deepseek", {}).get("api_key", "")
+        masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else ""
+        return jsonify({"deepseek_configured": bool(key), "key_masked": masked,
+                        "theme": config.get("theme")})
+    body = request.json or {}
+    if "api_key" in body and body["api_key"]:
+        cfg_d = config.get("deepseek", {})
+        cfg_d["api_key"] = body["api_key"].strip()
+        config.set("deepseek", cfg_d)
+    if "theme" in body:
+        config.set("theme", body["theme"])
+    config.set("first_run", False)
+    return jsonify({"ok": True})
+
+@app.route("/")
+def index():
+    return send_from_directory(UI_DIR, "index.html")
+
+@app.route("/<path:name>")
+def static_files(name):
+    return send_from_directory(UI_DIR, name)
+
+def run(port=0):
+    """启动内核;port=0 动态分配,返回实际端口"""
+    import socket
+    if port == 0:
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+    log.info(f"内核启动 127.0.0.1:{port}")
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=port, threads=4)
+    return port
+
+if __name__ == "__main__":
+    run()

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LioDesktop — AI 资讯雷达</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="logo">📡 LioDesktop</div>
+    <nav>
+      <button class="nav-btn active" data-page="radar">资讯雷达</button>
+      <button class="nav-btn" data-page="chat">AI 问答</button>
+      <button class="nav-btn" data-page="models">模型情报</button>
+      <button class="nav-btn" data-page="settings">设置</button>
+    </nav>
+    <div class="status-panel">
+      <div class="status-title">系统状态</div>
+      <div class="status-row"><span class="dot" id="dot-github"></span> GitHub 雷达</div>
+      <div class="status-row"><span class="dot" id="dot-models"></span> 模型情报</div>
+      <div class="status-row"><span class="dot" id="dot-llm"></span> AI 服务</div>
+      <div class="status-row"><span class="dot" id="dot-core"></span> 内核</div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <!-- 资讯雷达 -->
+    <section id="page-radar" class="page active">
+      <div class="page-head">
+        <h2>资讯雷达</h2>
+        <div class="radar-bar">
+          <input id="radar-q" placeholder="搜索关键词,如: qwen created:>2026-08-10">
+          <button id="radar-search">搜索</button>
+          <button id="radar-new" class="secondary">近7天新项目</button>
+        </div>
+      </div>
+      <div id="radar-list" class="list"></div>
+    </section>
+
+    <!-- AI 问答 -->
+    <section id="page-chat" class="page">
+      <div class="page-head"><h2>AI 问答</h2></div>
+      <div id="chat-box" class="chat-box"></div>
+      <div class="chat-input-bar">
+        <input id="chat-input" placeholder="问点什么…(Enter 发送)">
+        <button id="chat-send">发送</button>
+      </div>
+    </section>
+
+    <!-- 模型情报 -->
+    <section id="page-models" class="page">
+      <div class="page-head"><h2>模型情报</h2></div>
+      <div class="verify-bar">
+        <input id="verify-text" placeholder="贴一条 AI 传闻/消息,自动核验真伪… 如: qwen3.8-27b 4090能跑,媲美fable5">
+        <button id="verify-btn" class="primary">核验</button>
+      </div>
+      <div id="verify-result"></div>
+      <div class="sub-title">近 7 天新模型(HuggingFace) <button id="models-refresh" class="mini">刷新</button></div>
+      <div id="models-list" class="list"></div>
+      <div class="sub-title">最近核验记录</div>
+      <div id="verify-history" class="list"></div>
+    </section>
+
+    <!-- 设置 -->
+    <section id="page-settings" class="page">
+      <div class="page-head"><h2>设置</h2></div>
+      <div class="settings-card">
+        <label>预设(点击填入)</label>
+        <div class="preset-bar">
+          <select id="preset-select">
+            <option value="deepseek">DeepSeek</option>
+            <option value="qwen">阿里百炼 Qwen</option>
+            <option value="openai">OpenAI</option>
+            <option value="kimi">Kimi</option>
+            <option value="glm">智谱 GLM</option>
+            <option value="ollama">Ollama 本地</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+          <button id="preset-apply" class="mini">填入</button>
+        </div>
+        <label>供应商名称</label>
+        <input id="p-name" placeholder="如: deepseek">
+        <label>Base URL</label>
+        <input id="p-base" placeholder="https://api.deepseek.com">
+        <label>API Key</label>
+        <input id="p-key" type="password" placeholder="sk-...">
+        <label>模型</label>
+        <input id="p-model" placeholder="deepseek-chat">
+        <div class="key-hint" id="p-hint"></div>
+        <div class="btn-row">
+          <button id="p-test">测试连接</button>
+          <button id="p-save" class="primary">保存并设为当前</button>
+        </div>
+      </div>
+      <div class="sub-title">已配置的供应商</div>
+      <div id="provider-list" class="list"></div>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
