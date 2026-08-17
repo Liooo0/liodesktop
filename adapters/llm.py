@@ -2,7 +2,10 @@
 预设: DeepSeek / 阿里百炼Qwen / OpenAI / Kimi / GLM / Ollama / OpenRouter
 错误分层: auth / limit / network / service
 """
-import json, urllib.request, urllib.error
+import json
+import urllib.error
+import urllib.request
+
 from .base import Adapter
 
 PRESETS = {

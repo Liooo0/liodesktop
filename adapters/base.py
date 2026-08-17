@@ -1,6 +1,7 @@
 """Adapter 接口(冻结): 所有能力适配器必须实现 health() 和 describe()"""
 from abc import ABC, abstractmethod
 
+
 class Adapter(ABC):
     name = "base"
 

@@ -1,16 +1,33 @@
-"""LioDesktop 内核: Flask 统一入口(health/status/radar/chat/config)"""
-import os, sys, json, urllib.request, urllib.error
-from flask import Flask, request, jsonify, send_from_directory
+"""LioDesktop 内核: Flask 统一入口(health/status/radar/chat/config)
+
+错误统一经 errors.to_error_response 转换: 对外只暴露 code/message,
+真实异常进日志,不泄漏内部细节。
+"""
+import json
+import os
+import sys
+import urllib.request
+
+from flask import Flask, jsonify, request, send_from_directory
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.logger import get_logger
-from core.config import ConfigManager
-from core.service_manager import ServiceManager
-from core.db import db_add, db_query
 from adapters.github_radar import GitHubRadar
-from adapters.model_radar import ModelRadar
 from adapters.llm import LLMProvider
+from adapters.model_radar import ModelRadar
+from core.config import ConfigManager
+from core.db import db_add, db_query
+from core.errors import (
+    AppError,
+    AuthError,
+    NetworkError,
+    ProviderError,
+    RateLimitError,
+    ValidationError,
+    to_error_response,
+)
+from core.logger import get_logger
+from core.service_manager import ServiceManager
 
 log = get_logger("server")
 app = Flask(__name__, static_folder=None)
@@ -28,6 +45,23 @@ sm.register("llm", check=llm.health)
 
 UI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ui")
 
+
+def _map_error(e):
+    """把适配层异常(RuntimeError 前缀 / AppError)映射为统一错误响应。"""
+    if isinstance(e, AppError):
+        return to_error_response(e)
+    msg = str(e)
+    if msg.startswith("auth:"):
+        return to_error_response(AuthError(msg[5:].strip()))
+    if msg.startswith("limit:"):
+        return to_error_response(RateLimitError(msg[6:].strip()))
+    if msg.startswith("network:"):
+        return to_error_response(NetworkError(msg[8:].strip()))
+    if msg.startswith("service:"):
+        return to_error_response(ProviderError(msg[8:].strip()))
+    log.exception("unhandled error")
+    return to_error_response(e)
+
 @app.route("/health")
 def health():
     return jsonify({"ok": True, "app": "liodesktop", "version": "0.1.0"})
@@ -39,7 +73,10 @@ def status():
 @app.route("/api/radar")
 def radar():
     q = request.args.get("q", "")
-    days = int(request.args.get("days", "7"))
+    try:
+        days = int(request.args.get("days", "7"))
+    except ValueError:
+        return to_error_response(ValidationError("days 必须是数字"))
     try:
         if q:
             items = github.search_repos(q)
@@ -47,19 +84,21 @@ def radar():
             items = github.new_models(days)
         return jsonify({"ok": True, "items": items})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+        body, status = _map_error(e)
+        return jsonify(body), status
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
     q = (request.json or {}).get("q", "").strip()
     if not q:
-        return jsonify({"ok": False, "error": "empty"}), 400
+        return jsonify({"ok": False, "code": "VALIDATION_ERROR", "message": "请输入问题"}), 400
     try:
         answer = llm.ask(q)
         db_add("chat", q, answer)
         return jsonify({"ok": True, "answer": answer})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        body, status = _map_error(e)
+        return jsonify(body), status
 
 @app.route("/api/models")
 def api_models():
@@ -67,19 +106,21 @@ def api_models():
         items = models.recent_models()
         return jsonify({"ok": True, "items": items})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 502
+        body, status = _map_error(e)
+        return jsonify(body), status
 
 @app.route("/api/verify", methods=["POST"])
 def verify():
     text = (request.json or {}).get("text", "").strip()
     if not text:
-        return jsonify({"ok": False, "error": "empty"}), 400
+        return jsonify({"ok": False, "code": "VALIDATION_ERROR", "message": "请输入要核验的内容"}), 400
     try:
         result = models.verify(text, github, llm)
         db_add("verify", text, json.dumps(result, ensure_ascii=False)[:2000])
         return jsonify(result)
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        body, status = _map_error(e)
+        return jsonify(body), status
 
 @app.route("/api/providers", methods=["GET", "POST"])
 def providers():
@@ -102,7 +143,6 @@ def providers():
 def providers_test():
     """测试连接: 用临时配置发一个最小请求"""
     body = request.json or {}
-    name = body.get("name", "")
     base_url = body.get("base_url", "")
     api_key = body.get("api_key", "")
     model = body.get("model", "")

@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "SIM", "B", "S"]
+# S101: 测试中的 assert 属正常用法
+# S310/BLE001: 适配层对外部 URL 请求与兜底是设计行为
+# B904: 异常链改造对存量小项目收益低,渐进治理
+# S110/S112/SIM105: 轮询/静默兜底属设计行为
+# E501: 存量长行(HTML 模板/中文文案),渐进治理
+ignore = ["S101", "S310", "BLE001", "B904", "S110", "S112", "SIM105", "SIM108", "E501"]

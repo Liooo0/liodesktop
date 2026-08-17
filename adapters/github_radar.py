@@ -1,6 +1,10 @@
 """GitHub 资讯雷达: 搜索新项目/新模型仓库(GitHub Search API,免token)"""
-import json, os, urllib.request, urllib.parse
+import json
+import urllib.parse
+import urllib.request
+
 from .base import Adapter
+
 
 class GitHubRadar(Adapter):
     name = "github"

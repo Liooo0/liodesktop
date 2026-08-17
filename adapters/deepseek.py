@@ -1,6 +1,10 @@
 """DeepSeek 问答适配器(通用AI问答+资讯核验分析)"""
-import json, os, urllib.request
+import json
+import urllib.error
+import urllib.request
+
 from .base import Adapter
+
 
 class DeepSeekAdapter(Adapter):
     name = "deepseek"

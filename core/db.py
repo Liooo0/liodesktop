@@ -1,5 +1,7 @@
 """SQLite 历史: 核验/搜索/聊天记录持久化(评审: SQLite 从"工具"到"应用")"""
-import json, os, sqlite3, threading
+import os
+import sqlite3
+import threading
 
 DATA_DIR = os.path.expanduser("~/.liodesktop")
 DB_PATH = os.path.join(DATA_DIR, "liodesktop.db")
@@ -23,7 +25,8 @@ def db_add(kind, query, result):
             c = _conn()
             c.execute("INSERT INTO history (kind, query, result) VALUES (?,?,?)",
                       (kind, query, result))
-            c.commit(); c.close()
+            c.commit()
+            c.close()
     except Exception:
         pass
 

@@ -1,7 +1,7 @@
 """macOS 系统托盘(NSStatusItem via pyobjc)——pywebview 6 已移除内置 Tray"""
 import objc
-from AppKit import (NSObject, NSStatusBar, NSVariableStatusItemLength,
-                    NSMenu, NSMenuItem)
+from AppKit import NSMenu, NSMenuItem, NSObject, NSStatusBar, NSVariableStatusItemLength
+
 
 class TrayHandler(NSObject):
     def init(self):

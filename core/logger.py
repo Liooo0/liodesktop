@@ -1,5 +1,6 @@
 """Logger: 滚动日志到 ~/.liodesktop/logs/app.log"""
-import logging, os
+import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 DATA_DIR = os.path.expanduser("~/.liodesktop")
