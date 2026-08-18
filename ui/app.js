@@ -113,15 +113,54 @@ async function sendChat() {
   const q = $("#chat-input").value.trim();
   if (!q) return;
   addMsg("user", q);
-  const wait = addMsg("bot", "思考中…");
+  const wait = addMsg("bot", "");
   $("#chat-input").value = "";
+  const cursor = document.createElement("span");
+  cursor.className = "stream-cursor";
+  wait.appendChild(cursor);
+  let full = "";
+  const render = () => { wait.innerHTML = mdRender(full); wait.appendChild(cursor); scrollChat(); };
+  const renderFinal = () => { wait.innerHTML = mdRender(full); scrollChat(); };
   try {
-    const r = await fetch("/api/chat", { method: "POST",
+    const r = await fetch("/api/chat/stream", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ q }) });
-    const d = await r.json();
-    wait.textContent = d.ok ? d.answer : "⚠ " + d.error;
-    if (!d.ok) wait.className = "msg bot err";
-  } catch (e) { wait.textContent = "⚠ 网络错误"; wait.className = "msg bot err"; }
+    if (!r.ok || !r.body) throw new Error("http " + r.status);
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const rawEvent = buf.slice(0, idx); buf = buf.slice(idx + 2);
+        const lines = rawEvent.split("\n");
+        const eventName = (lines.find(l => l.startsWith("event: ")) || "").slice(7).trim();
+        const data = (lines.find(l => l.startsWith("data: ")) || "").slice(6).trim();
+        if (!data) continue;
+        if (eventName === "error") {
+          const err = JSON.parse(data);
+          cursor.remove();
+          wait.innerHTML = "⚠ " + (err.message || err.code);
+          wait.className = "msg bot err";
+          return;
+        }
+        if (data === "[DONE]") { cursor.remove(); renderFinal(); return; }
+        const d = JSON.parse(data);
+        if (d.delta) { full += d.delta; render(); }
+      }
+    }
+    cursor.remove();
+    if (!full) { wait.innerHTML = "⚠ 空回复"; wait.className = "msg bot err"; }
+  } catch (e) {
+    cursor.remove();
+    wait.innerHTML = full ? mdRender(full) + "<br>⚠ 连接中断" : "⚠ 网络错误";
+    wait.className = "msg bot err";
+  }
+}
+function scrollChat() {
+  $("#chat-box").scrollTop = 99999;
 }
 $("#chat-send").addEventListener("click", sendChat);
 $("#chat-input").addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
