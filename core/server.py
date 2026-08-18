@@ -8,7 +8,7 @@ import os
 import sys
 import urllib.request
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -99,6 +99,36 @@ def chat():
     except Exception as e:
         body, status = _map_error(e)
         return jsonify(body), status
+
+@app.route("/api/chat/stream", methods=["POST"])
+def chat_stream():
+    """流式问答(SSE): 边生成边推给 UI。
+
+    事件协议:
+      data: {"delta": "..."}   增量文本
+      data: [DONE]             结束(完整答案此时落库)
+      event: error             出错时(负载同 to_error_response: code/message)
+    """
+    q = (request.json or {}).get("q", "").strip()
+    if not q:
+        return jsonify({"ok": False, "code": "VALIDATION_ERROR", "message": "请输入问题"}), 400
+
+    def gen():
+        chunks = []
+        try:
+            for delta in llm.ask_stream(q):
+                chunks.append(delta)
+                yield f"data: {json.dumps({'delta': delta}, ensure_ascii=False)}\n\n"
+            answer = "".join(chunks).strip()
+            if answer:
+                db_add("chat", q, answer)
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            body, _ = _map_error(e)
+            yield f"event: error\ndata: {json.dumps(body, ensure_ascii=False)}\n\n"
+
+    return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.route("/api/models")
 def api_models():
@@ -210,7 +240,7 @@ def run(port=0):
         s.close()
     log.info(f"内核启动 127.0.0.1:{port}")
     from waitress import serve
-    serve(app, host="127.0.0.1", port=port, threads=4)
+    serve(app, host="127.0.0.1", port=port, threads=8)
     return port
 
 if __name__ == "__main__":
