@@ -1,17 +1,20 @@
-"""端到端: /api/chat/stream 的 SSE 协议(假上游 + 临时 HOME, 不触真实配置/数据)。"""
+"""端到端: /api/chat/stream 的 SSE 协议(假上游)。
+
+隔离策略: 显式替换 server 模块里的 config/llm 实例指向临时文件,
+并 monkeypatch db_add —— 绝不触碰真实的 ~/.liodesktop 配置与数据库。
+"""
 import json
-import os
 import sys
-import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-# 必须在 import core.server 之前把 HOME 指到临时目录(ConfigManager/db 都基于 HOME)
-os.environ["HOME"] = tempfile.mkdtemp(prefix="liodesktop-test-home-")
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
+
+from adapters.llm import LLMProvider
+from core.config import ConfigManager
 
 SSE_CHUNKS = [
     "data: " + json.dumps({"choices": [{"delta": {"content": "你好"}}]}) + "\n\n",
@@ -43,14 +46,25 @@ def upstream():
     srv.shutdown()
 
 
-def test_stream_endpoint_protocol(upstream):
+@pytest.fixture()
+def isolated_server(tmp_path, monkeypatch):
+    """替换 server 模块的全局 config/llm/db_add, 与真实环境完全隔离。"""
     from core import server as srvmod
 
-    port = upstream.server_port
-    srvmod.llm.upsert("local", f"http://127.0.0.1:{port}/v1", "", "mx")
-    srvmod.llm.set_active("local")
+    saved_config, saved_llm = srvmod.config, srvmod.llm
+    srvmod.config = ConfigManager(path=str(tmp_path / "cfg.json"), defaults={})
+    srvmod.llm = LLMProvider(srvmod.config)
+    monkeypatch.setattr(srvmod, "db_add", lambda *a, **k: None)
+    yield srvmod
+    srvmod.config, srvmod.llm = saved_config, saved_llm
 
-    client = srvmod.app.test_client()
+
+def test_stream_endpoint_protocol(upstream, isolated_server):
+    port = upstream.server_port
+    isolated_server.llm.upsert("local", f"http://127.0.0.1:{port}/v1", "", "mx")
+    isolated_server.llm.set_active("local")
+
+    client = isolated_server.app.test_client()
     r = client.post("/api/chat/stream", json={"q": "hi"})
     assert r.status_code == 200
     assert r.mimetype == "text/event-stream"
@@ -60,13 +74,11 @@ def test_stream_endpoint_protocol(upstream):
     assert "event: error" not in body
 
 
-def test_stream_endpoint_error_protocol(upstream):
-    from core import server as srvmod
+def test_stream_endpoint_error_protocol(upstream, isolated_server):
+    isolated_server.llm.upsert("bad", "https://remote.example.com/v1", "", "mx")
+    isolated_server.llm.set_active("bad")
 
-    srvmod.llm.upsert("bad", "https://remote.example.com/v1", "", "mx")
-    srvmod.llm.set_active("bad")
-
-    client = srvmod.app.test_client()
+    client = isolated_server.app.test_client()
     r = client.post("/api/chat/stream", json={"q": "hi"})
     assert r.status_code == 200            # SSE 通道本身 200, 错误走 event
     body = r.get_data(as_text=True)
