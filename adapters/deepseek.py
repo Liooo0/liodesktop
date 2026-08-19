@@ -1,10 +1,16 @@
-"""DeepSeek 问答适配器(通用AI问答+资讯核验分析)"""
+"""DeepSeek 问答适配器(通用AI问答+资讯核验分析)
+
+模型分层: 日常问答/通用核验走 deepseek-v4-flash(生产默认,快且便宜),
+复杂推理/代码分析/深度核验传 model="deepseek-v4-pro"。
+"""
 import json
 import urllib.error
 import urllib.request
 
 from .base import Adapter
 
+DEFAULT_MODEL = "deepseek-v4-flash"
+PRO_MODEL = "deepseek-v4-pro"
 
 class DeepSeekAdapter(Adapter):
     name = "deepseek"
@@ -18,12 +24,12 @@ class DeepSeekAdapter(Adapter):
     def health(self) -> bool:
         return bool(self._key())
 
-    def ask(self, question, system=None, temperature=0.3, max_tokens=800):
+    def ask(self, question, system=None, temperature=0.3, max_tokens=800, model=None):
         key = self._key()
         if not key:
             raise RuntimeError("auth: 未配置 DeepSeek API Key,请到设置页配置")
         payload = json.dumps({
-            "model": "deepseek-chat",
+            "model": model or DEFAULT_MODEL,
             "messages": [
                 {"role": "system", "content": system or "你是 LioDesktop 的 AI 助手,回答简洁准确,用中文。"},
                 {"role": "user", "content": question},

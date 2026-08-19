@@ -195,7 +195,7 @@ function escapeHtml(s) {
 
 // 设置: 供应商管理
 const PRESETS = {
-  deepseek:  { label: "DeepSeek",    base: "https://api.deepseek.com",                          model: "deepseek-chat" },
+  deepseek:  { label: "DeepSeek",    base: "https://api.deepseek.com",                          model: "deepseek-v4-flash" },
   qwen:      { label: "阿里百炼Qwen", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
   openai:    { label: "OpenAI",      base: "https://api.openai.com/v1",                         model: "gpt-4o-mini" },
   kimi:      { label: "Kimi",        base: "https://api.moonshot.cn/v1",                        model: "moonshot-v1-8k" },

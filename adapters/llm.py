@@ -9,7 +9,7 @@ import urllib.request
 from .base import Adapter
 
 PRESETS = {
-    "deepseek":  {"label": "DeepSeek",   "base_url": "https://api.deepseek.com",           "model": "deepseek-chat"},
+    "deepseek":  {"label": "DeepSeek",   "base_url": "https://api.deepseek.com",           "model": "deepseek-v4-flash"},
     "qwen":      {"label": "阿里百炼Qwen", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-plus"},
     "openai":    {"label": "OpenAI",      "base_url": "https://api.openai.com/v1",          "model": "gpt-4o-mini"},
     "kimi":      {"label": "Kimi",        "base_url": "https://api.moonshot.cn/v1",         "model": "moonshot-v1-8k"},
@@ -57,7 +57,7 @@ class LLMProvider(Adapter):
         base = p["base_url"].rstrip("/")
         url = base + "/chat/completions"
         payload = json.dumps({
-            "model": p.get("model", "deepseek-chat"),
+            "model": p.get("model", "deepseek-v4-flash"),
             "messages": [
                 {"role": "system", "content": system or "你是 LioDesktop 的 AI 助手,回答简洁准确,用中文。"},
                 {"role": "user", "content": question},

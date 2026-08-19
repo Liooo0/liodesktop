@@ -148,7 +148,8 @@ class ModelRadar(Adapter):
 4. 最后给一句总结: 这条消息值不值得信,关键看哪几个数据
 用 Markdown 列表输出。"""
         try:
-            report = deepseek_adapter.ask(prompt, temperature=0.2, max_tokens=900)
+            report = deepseek_adapter.ask(prompt, temperature=0.2, max_tokens=900,
+                                          model=deepseek_adapter.PRO_MODEL)
         except Exception as e:
             report = f"(LLM核验失败: {e}) 以下为原始证据:\n" + "\n".join(evidence)
         return {"ok": True, "models": names, "evidence": evidence, "report": report}
